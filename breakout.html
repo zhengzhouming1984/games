@@ -107,7 +107,7 @@ const BALL_SLOW_DUR    = 10 * 60; // frames
 const MAX_BALLS        = 3;
 
 // Lives
-const START_LIVES = 1;
+const START_LIVES = 3;
 
 // Particles
 const MAX_PARTICLES = 400;
@@ -126,6 +126,7 @@ let lives       = START_LIVES;
 let level       = 1;
 let frameCount  = 0;
 let shakeAmount = 0;
+let lifeLostTimer = 0; // pause after losing a life
 
 // Flash effect when score hits milestone
 let flashAlpha  = 0;
@@ -1131,6 +1132,7 @@ function startGame() {
   for (const pu of powerUps) pu.active = false;
   flashAlpha = 0;
   flashTarget = 0;
+  lifeLostTimer = 0;
 }
 
 function resetGame() {
@@ -1277,9 +1279,10 @@ function update() {
   // Update paddle
   paddle.update();
 
-  // Update balls
-  for (const ball of balls) {
-    if (!ball.active) continue;
+  // Update balls (freeze during life-lost pause)
+  if (lifeLostTimer === 0) {
+    for (const ball of balls) {
+      if (!ball.active) continue;
 
     // Maintain speed
     const currentMag = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy);
@@ -1298,6 +1301,7 @@ function update() {
       handleBrickHit(ball, hit);
     }
   }
+  } // end if lifeLostTimer === 0
 
   // Remove inactive balls (bottom loss)
   let anyLost = false;
@@ -1311,30 +1315,38 @@ function update() {
 
   if (anyLost && activeBallCount() === 0) {
     lives--;
+    // Dramatic life-lost visual feedback
+    flashAlpha = 0.5;
+    flashTarget = -1; // fade out
+    shakeAmount = 12;
+    lifeLostTimer = 50; // ~0.8s pause
+    spawnExplosion(GAME_WIDTH / 2, GAME_HEIGHT / 2, '#ff0044', '#ff3366', 30);
+
     if (lives <= 0) {
       gameState = STATE.GAME_OVER;
       if (score > highScore) {
         highScore = score;
         localStorage.setItem('neonBreakoutHighScore', highScore);
       }
-    } else {
+    }
+  }
+
+  // Life-lost timer countdown
+  if (lifeLostTimer > 0) {
+    lifeLostTimer--;
+    if (lifeLostTimer === 0 && gameState === STATE.PLAYING) {
       // Respawn ball
       const mainBall = balls[0];
-      const spd = mainBall.speed || BALL_SPEED_BASE;
+      const spd = BALL_SPEED_BASE;
       const angle = (Math.random() - 0.5) * 0.8;
       mainBall.reset(GAME_WIDTH / 2, PADDLE_Y - BALL_RADIUS - 5, Math.sin(angle) * spd, -spd);
       mainBall.speed = spd;
-      // Reset other balls
       for (let i = 1; i < balls.length; i++) {
         balls[i].active = false;
       }
-      // Reset paddle power-ups
       paddle.wideTimer = 0;
       paddle.w = PADDLE_W_BASE;
-      // Kill active power-ups
       for (const pu of powerUps) pu.active = false;
-      // Small shake
-      shakeAmount = 4;
     }
   }
 
@@ -1437,6 +1449,21 @@ function render() {
   if (flashAlpha > 0) {
     ctx.fillStyle = `rgba(255, 255, 255, ${flashAlpha * 0.15})`;
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+  }
+
+  // Life lost notification
+  if (lifeLostTimer > 0 && gameState === STATE.PLAYING) {
+    ctx.font = 'bold 28px "Courier New", monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#ff0044';
+    ctx.shadowColor = '#ff0044';
+    ctx.shadowBlur = 20;
+    const alpha = lifeLostTimer > 10 ? 1 : lifeLostTimer / 10;
+    ctx.globalAlpha = alpha;
+    const remaining = lives;
+    ctx.fillText('💀 LIFE LOST! ×' + remaining, GAME_WIDTH / 2, GAME_HEIGHT / 2 - 30);
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
   }
 
   // Screen overlays
